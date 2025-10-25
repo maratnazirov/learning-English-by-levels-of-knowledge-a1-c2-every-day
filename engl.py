@@ -111,3 +111,39 @@ def get_words_for_user(user_id, level, count=10):
     except Exception as e:
         logging.error(f"Error in get_words_for_user: {e}")
         return []
+#Окончание слов в БД(M)
+async def send_words_to_user(user_id, level, bot):
+    try:
+        words = get_words_for_user(user_id, level, 10)
+        
+        # Если слова закончились
+        if words is None:
+            keyboard = [["🔄 Начать заново", "🚫 Завершить"]]
+            reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True)
+            
+            await bot.send_message(
+                chat_id=user_id, 
+                text=f"🎉 Поздравляем! Вы изучили все слова уровня {level}!\n\nХотите начать заново с этим уровнем?",
+                reply_markup=reply_markup
+            )
+            return []
+        
+        if not words:
+            await bot.send_message(
+                chat_id=user_id,
+                text="❌ Не удалось получить слова. Попробуйте позже."
+            )
+            return []
+        
+        message = f"📚 Слова уровня {level}:\n\n"
+        for i, word_data in enumerate(words, 1):
+            message += f"{i}. {word_data['word']} - {word_data['translation']}\n"
+            if word_data.get('example'):
+                message += f"   Пример: {word_data['example']}\n"
+            message += "\n"
+        
+        await bot.send_message(chat_id=user_id, text=message)
+        return words
+    except Exception as e:
+        logging.error(f"Error in send_words_to_user: {e}")
+        return []
