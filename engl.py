@@ -1,5 +1,7 @@
 import logging
 import sqlite3
+import random
+from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -13,9 +15,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-# Обновление схемы базы данных
+# Обновление схемы базы данных(M)
 def update_db_schema():
-
     # Добавляет отсутствующие колонки в таблицу users
     try:
         conn = sqlite3.connect(DB_NAME)
@@ -33,7 +34,7 @@ def update_db_schema():
         logging.info("Database schema updated successfully")
     except Exception as e:
         logging.error(f"Error updating database schema: {e}")
-# Инициализация базы данных
+# Инициализация базы данных(M)
 def init_db():
     try:
         conn = sqlite3.connect(DB_NAME)
@@ -47,27 +48,66 @@ def init_db():
         logging.info("Database initialized successfully")
     except Exception as e:
         logging.error(f"Database initialization error: {e}")
-
+# Функция сброса прогресса(M)
+async def reset_user_progress(user_id: int):
+    #Полностью сбрасывает прогресс пользователя
     try:
-        if not words:
-            return
-            
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
-        today = datetime.now().date()
         
-        for word_data in words:
-            cursor.execute(
-                "INSERT OR IGNORE INTO user_words (user_id, word, sent_date) VALUES (?, ?, ?)",
-                (user_id, word_data["word"], today)
-            )
+        # Удаляем все отправленные слова пользователя
+        cursor.execute("DELETE FROM user_words WHERE user_id = ?", (user_id,))
         
-        cursor.execute(
-            "UPDATE users SET last_sent = ? WHERE user_id = ?",
-            (today, user_id)
-        )
+        # Сбрасываем флаг повторения
+        cursor.execute("UPDATE users SET repeat_words = 0 WHERE user_id = ?", (user_id,))
+        
+        # Сбрасываем дату последней отправки
+        cursor.execute("UPDATE users SET last_sent = NULL WHERE user_id = ?", (user_id,))
         
         conn.commit()
         conn.close()
+        logging.info(f"Progress reset for user {user_id}")
+        return True
     except Exception as e:
-        logging.error(f"Error in save_sent_words: {e}")
+        logging.error(f"Error resetting user progress: {e}")
+        return False
+# Функция передачи слов пользователям(2 способа: при reset и обычно)(M)
+def get_words_for_user(user_id, level, count=10):
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT repeat_words FROM users WHERE user_id = ?", (user_id,))
+        repeat_result = cursor.fetchone()
+        repeat_words = repeat_result[0] if repeat_result else 0
+        
+        cursor.execute("SELECT word FROM user_words WHERE user_id = ?", (user_id,))
+        sent_words = [row[0] for row in cursor.fetchall()]
+        
+        # Получаем все доступные слова для уровня
+        all_level_words = WORDS.get(level, [])
+        
+        if repeat_words:
+            # В режиме повторения берем случайные слова из всех
+            if len(all_level_words) <= count:
+                selected_words = all_level_words
+            else:
+                selected_words = random.sample(all_level_words, count)
+        else:
+            # В обычном режиме берем только неотправленные слова
+            available_words = [word for word in all_level_words if word["word"] not in sent_words]
+            
+            if len(available_words) == 0:
+                conn.close()
+                return None  # Все слова изучены
+            
+            if len(available_words) <= count:
+                selected_words = available_words
+            else:
+                selected_words = random.sample(available_words, count)
+        
+        conn.close()
+        return selected_words
+    except Exception as e:
+        logging.error(f"Error in get_words_for_user: {e}")
+        return []
