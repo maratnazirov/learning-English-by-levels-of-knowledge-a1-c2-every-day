@@ -55,3 +55,29 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logging.error(f"Error in status command: {e}")
         await update.message.reply_text("❌ Произошла ошибка. Попробуйте еще раз.")
+
+async def send_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        user_id = update.effective_user.id
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("SELECT level FROM users WHERE user_id = ?", (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            level = result[0]
+            words = await send_words_to_user(user_id, level, context.bot)
+            if words is not None:  
+                save_sent_words(user_id, words)
+                
+            if words:
+                await update.message.reply_text("✅ Слова отправлены! Используйте /send для следующих слов")
+        else:
+            await update.message.reply_text(
+                "❌ Сначала выберите уровень\n\n"
+                "Используйте /start чтобы начать"
+            )
+    except Exception as e:
+        logging.error(f"Error in send_now command: {e}")
+        await update.message.reply_text("❌ Произошла ошибка. Попробуйте еще раз.")
